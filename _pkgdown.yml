@@ -1,0 +1,65 @@
+url: https://github.com/alazarovski/rddr
+template:
+  bootstrap: 5
+
+navbar:
+  structure:
+    left:  [intro, reference, articles, news]
+    right: [search, github]
+  components:
+    intro:
+      text: "Get Started"
+      href: articles/rddr-guide.html  # This links directly to your guide
+    reference:
+      text: "Reference"
+      href: reference/index.html
+    articles:
+      text: "Articles"
+      menu:
+        - text: "Complete Guide"
+          href: articles/rddr-guide.html
+
+reference:
+  - title: "Network Infrastructure"
+    desc: "Airports, points, and runways"
+    contents:
+      - read_arp
+      - read_narp
+      - read_nnpt
+      - read_sid
+      - read_runway
+
+  - title: "Airspace & Geometry"
+    desc: "Sectors, volumes, and hierarchy"
+    contents:
+      - read_are
+      - read_sls
+      - read_spc
+      - read_aco
+
+  - title: "Operations & Configs"
+    desc: "Configurations and opening schemes"
+    contents:
+      - read_cfg
+      - read_cos
+      - read_mot
+
+  - title: "Traffic & Routing"
+    desc: "Routes and traffic volumes"
+    contents:
+      - read_routes
+      - read_ntfv
+      - read_soa
+
+  - title: "Rules & Logic"
+    desc: "Parsing complex logic files"
+    contents:
+      - read_flc2
+      - read_awk
+      - read_rlex
+
+  - title: "Penalties"
+    desc: "Costs and constraints"
+    contents:
+      - read_tax
+      - read_pnl

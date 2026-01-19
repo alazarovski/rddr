@@ -1,225 +1,236 @@
 ---
-title: "Parsing SAAM/Gasel Data with rddr"
-author: ""
-date: "`r format(Sys.Date())`"
-output:
-  rmarkdown::html_vignette:
-    toc: true
-    toc_depth: 3
+title: "Complete Guide to Parsing SAAM/Gasel Data"
+output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Parsing SAAM/Gasel Data with rddr}
+  %\VignetteIndexEntry{Complete Guide to Parsing SAAM/Gasel Data}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
 
-# Introduction
-
-The **rddr** package provides a robust, high-performance interface for parsing the proprietary text-based file formats used in **SAAM** and **Gasel** aviation tools.
-
-Aviation data often comes in complex, non-standard text formats that mix hierarchical structures, geometric definitions, and pseudo-code logic. Instead of writing custom regex parsers for every analysis, **rddr** transforms these formats into tidy `data.table`s ready for filtering and analysis.
-
-## Supported Formats
-
-| File Ext | Function     | Description                              |
-|----------|--------------|------------------------------------------|
-| `.arp`   | `read_arp`   | Airport coordinates and FIRs             |
-| `.narp`  | `read_narp`  | Advanced airport metadata (TIS/TRS/Taxi) |
-| `.nnpt`  | `read_nnpt`  | Navigation points (Waypoints, VORs)      |
-| `.sid`   | `read_sid`   | Standard Instrument Departures           |
-| `.runway`| `read_runway`| Runway configurations & taxonomy         |
-| `.soa`   | `read_soa`   | Area definitions (recursive groups)      |
-| `.rts`   | `read_routes`| Route/Airway sequences                   |
-| `.are`   | `read_are`   | Airblock/Volume 2D geometry              |
-| `.sls`   | `read_sls`   | Sector vertical limits & composition     |
-| `.aco`   | `read_aco`   | Airspace sector colors & levels          |
-| `.spc`   | `read_spc`   | Airspace hierarchy (Parent/Child)        |
-| `.cfg`   | `read_cfg`   | Sector configurations                    |
-| `.cos`   | `read_cos`   | Configuration opening schemes            |
-| `.ntfv`  | `read_ntfv`  | Traffic Volumes (Flow definitions)       |
-| `.flc2`  | `read_flc2`  | Flight Level Constraints (FL_CONT)       |
-| `.awk`   | `read_awk`   | RAD Routing Rules (REGLE)                |
-| `.tax`   | `read_tax`   | Turning penalties                        |
-| `.pnl`   | `read_pnl`   | Segment cost penalties                   |
-| `.rlex`  | `read_rlex`  | Route length extension exceptions        |
-| `.mot`   | `read_mot`   | Military/Airspace opening times          |
-
-> **Note:** Example chunks that read external files use `eval = FALSE` so that the vignette builds even if those files are not available in your environment. Remove that option when running locally with the corresponding inputs.
-
-# 1. Building the Network Environment
-
-Before analyzing specific trajectories or rules, we must first load the static network definitions.
-
-## Setup
-
-```{r setup, include=FALSE}
+```{r, include = FALSE}
 knitr::opts_chunk$set(
   collapse = TRUE,
-  comment = "#>",
-  message = FALSE,
-  warning = FALSE
+  comment = "#>"
 )
 ```
 
-```{r libraries}
+```{r setup}
 library(rddr)
 library(data.table)
 ```
 
-## Airports and Points
+# Introduction
 
-The `.arp` format provides basic airport locations, while `.narp` offers detailed operational sequencing data. Navigation points are found in `.nnpt` files.
+The **rddr** package is a comprehensive parser for the proprietary text formats used in aviation tools like **SAAM**, **Gasel**, and **Airspace Editor**. This guide covers every supported file format, grouped by functional category.
 
-```{r read-arp-narp, eval=FALSE}
-# Basic Airport Definitions
+---
+
+# 1. Network Infrastructure
+
+These files define the static "hardware" of the network: airports, points, and runways.
+
+### Airports (`.arp`)
+Basic airport definitions including coordinates and FIR association.
+
+```{r arp, eval=FALSE}
 airports <- read_arp("data/network.arp")
-
-# Advanced Airport Metadata (Taxi times, TIS, TRS)
-# Useful for sequencing analysis
-airport_meta <- read_narp("data/network.narp")
-head(airport_meta[, .(icao, taxitime, tis, trs)])
-
-# Navigation Points (Waypoints)
-waypoints <- read_nnpt("data/points.nnpt")
-#    point_id type     lat     lon
-# 1:     DENUT   DB 51.2500 -2.5000
+#    icao     lat      lon     fir_id
+# 1: LFPG 49.0097   2.5479   LFFF_FIR
 ```
 
-## SIDs and Runways
+### Extended Airport Metadata (`.narp`)
+Includes sequencing parameters crucial for capacity analysis: Taxitime, TIS (Time to Insert), and TRS (Time to Remove).
 
-For terminal maneuvering area (TMA) analysis, we load SIDs and Runway configurations.
+```{r narp, eval=FALSE}
+narp <- read_narp("data/network.narp")
+# Check taxi times for specific airports
+head(narp[, .(icao, taxitime, tis, trs)])
+```
 
-```{r read-sid-runway, eval=FALSE}
-# Read SID definitions (ICAO -> Point list)
+### Navigation Points (`.nnpt`)
+Defines Waypoints, VORs, and NDBs.
+
+```{r nnpt, eval=FALSE}
+points <- read_nnpt("data/points.nnpt")
+head(points)
+```
+
+### Standard Instrument Departures (`.sid`)
+Maps an airport (ICAO) to a list of allowed departure points.
+
+```{r sid, eval=FALSE}
 sids <- read_sid("data/airports.sid")
+# Find all SIDs for Brussels
+brussels_sids <- sids[icao_apt == "EBBR"]
+```
 
-# Read Runway configurations
+### Runway Configurations (`.runway`)
+Defines which runways (QFUs) are active during specific time windows and their sequencing capabilities.
+
+```{r runway, eval=FALSE}
 runways <- read_runway("data/airport.runway")
+
+# Find the default configuration for today
+today_cfg <- runways[is_default == TRUE]
 ```
 
-## Routes and Areas
+---
 
-Routes (`.rts`) define airways, while `.soa` files define groups of airports (e.g., `LONDON_GROUP`).
+# 2. Airspace Geometry & Structure
 
-```{r read-routes-soa, eval=FALSE}
-# Read Airway Definitions
-airways <- read_routes("data/network.rts")
-# Ordered sequence of points for route 'UL607'
-ul607 <- airways[route_id == "UL607"]
+These files define the 3D shape and hierarchy of the airspace.
 
-# Read Area Groups (with recursion resolution)
-areas <- read_soa("data/groups.soa", resolve_recursion = TRUE)
-```
+### 2D Geometry (`.are`)
+Defines the lat/lon polygon vertices for "Volumes" (Airblocks).
 
-# 2. Airspace Geometry & Hierarchy
-
-Understanding the 3D structure of airspace requires parsing geometry (`.are`), vertical limits (`.sls`), and hierarchy (`.spc`).
-
-## Geometry and Composition
-
-```{r read-geometry, eval=FALSE}
-# Read 2D Geometry (Vertices)
-# Returns an ordered list of lat/lon points per volume
+```{r are, eval=FALSE}
 geometry <- read_are("data/sectors.are")
-
-# Read Sector Composition (Vertical limits & Volume mapping)
-# Links the 2D volumes from .are to vertical FL bands
-sector_defs <- read_sls("data/sectors.sls")
-
-# Read Visual Attributes (Colors)
-# Useful for plotting
-sector_colors <- read_aco("data/airspace.aco")
+# Returns an ordered sequence of points ready for polygon creation
+head(geometry)
 ```
 
-## Hierarchy and Traffic Volumes
+### Sector Definitions (`.sls`)
+Links the 2D Volumes (`.are`) to vertical Flight Level limits to create 3D Elementary Sectors.
 
-Traffic volumes (`.ntfv`) define flows, while `.spc` defines the parent-child relationships between airspaces.
+```{r sls, eval=FALSE}
+sectors <- read_sls("data/sectors.sls")
+# See which volume corresponds to a sector and its FL limits
+head(sectors[, .(sector_id, volume_id, fl_bottom, fl_top)])
+```
 
-```{r read-hierarchy, eval=FALSE}
-# Read Airspace Hierarchy (ACC -> Sector -> Elementary Sector)
+### Airspace Hierarchy (`.spc`)
+Defines the parent-child relationships (e.g., ACC contains Sectors, Sectors contain Elementary Sectors).
+
+```{r spc, eval=FALSE}
 hierarchy <- read_spc("data/airspace.spc")
 
-# Read Traffic Volumes (Flow definitions)
-# Contains logic for IN/OUT/EX flows
-tvs <- read_ntfv("data/traffic_volumes.ntfv")
+# Find all children of the "LFMM" ACC
+lfmm_components <- hierarchy[airspace_id == "LFMM"]
 ```
 
-# 3. Configurations & Schedules
+### Sector Visualization (`.aco`)
+Defines display attributes like RGB colors and transparency for airblocks.
 
-Operational data relies on knowing which sector configuration is active at what time.
+```{r aco, eval=FALSE}
+colors <- read_aco("data/airspace.aco")
+```
 
-```{r read-config, eval=FALSE}
-# Read Configuration Definitions
-# Maps configuration IDs (e.g., "CONF_A") to active sectors
+---
+
+# 3. Operations & Configurations
+
+These files control how the airspace is managed dynamically over time.
+
+### Configurations (`.cfg`)
+**Crucial for Capacity Planning.** This file defines named "Configurations" (e.g., `CONF_A`, `SPLIT_NORTH`) by listing exactly which elementary sectors are open/collapsed together.
+
+```{r cfg, eval=FALSE}
+# Load configuration definitions
 configs <- read_cfg("data/sectors.cfg")
 
-# Read Opening Scheme (Schedule)
-# Determines when specific configurations are active
+# Example: Inspect what sectors make up the "CONF_1A" configuration for "LFFF"
+my_config <- configs[acc_id == "LFFF" & config_id == "CONF_1A"]
+print(my_config)
+#    acc_id config_id    sector_id
+# 1:   LFFF   CONF_1A     SECTOR_1
+# 2:   LFFF   CONF_1A     SECTOR_2
+```
+
+### Opening Scheme (`.cos`)
+The "Calendar" of the airspace. It maps a specific date and time window to a Configuration ID defined in the `.cfg` file.
+
+```{r cos, eval=FALSE}
 schedule <- read_cos("data/opening_scheme.cos")
 
-# Find active configuration for a specific ACC on a specific date
-daily_plan <- schedule[date == as.Date("2024-06-01") & acc_id == "LFMM"]
-```
-
-# 4. Analyzing Logic: RAD Rules & Constraints
-
-A powerful feature of **rddr** is parsing the pseudo-code logic found in `.flc2` (Level Constraints) and `.awk` (Routing) files. These files can contain complex `if`/`then` logic, nested blocks, and regex matching.
-
-## Parsing Flight Level Constraints (`.flc2`)
-
-Set `parse_rules = TRUE` to extract actionable columns like `DEP`, `ARR`, and `FL_CONT`.
-
-```{r read-flc2, eval=FALSE}
-# Parse Flight Level Constraints
-flc <- read_flc2("data/constraints.flc2", parse_rules = TRUE)
-
-# Inspect structured output
-head(flc[, .(rule_id, condition_dep, condition_arr, constraint_type, constraint_value)])
-```
-
-## Parsing Routing Rules (`.awk`)
-
-Routing rules involve `REGLE` (routing strings) and `RFL` (Requested Flight Level) conditions.
-
-```{r read-awk, eval=FALSE}
-rad_rules <- read_awk("data/routing.awk", parse_rules = TRUE)
-
-# Find rules that force a specific routing for heavy jets (RFL >= 300)
-forced_routes <- rad_rules[
-  constraint_type == "ROUTING" &
-  condition_rfl_min >= 300
+# What configuration is active on 2024-06-01 at 09:00?
+active <- schedule[
+  date == "2024-06-01" & 
+  start_time <= "0900" & 
+  end_time >= "0900"
 ]
 ```
 
-# 5. Handling Penalties and Exceptions
+### Military Opening Times (`.mot`)
+Defines activation windows for military zones (TSA/TRA/CDR). This function automatically handles Version 1, 2, and 3 file formats.
 
-For optimization or simulation workflows, you often need to load costs and exceptions.
+```{r mot, eval=FALSE}
+military <- read_mot("data/military.mot")
+```
 
-## Penalties
+---
 
-```{r read-penalties, eval=FALSE}
-# Turn Penalties (Geometric turns)
+# 4. Traffic Flow & Routing
+
+These files define how aircraft move through the network.
+
+### Routes (`.rts`)
+Defines the sequence of points that make up an airway.
+
+```{r rts, eval=FALSE}
+routes <- read_routes("data/network.rts")
+```
+
+### Traffic Volumes (`.ntfv`)
+Defines complex flow filters (Traffic Volumes) used for capacity monitoring. It parses flow logic like `IN`, `EX` (Exclude), and `AD` (Aerodrome) filters.
+
+```{r ntfv, eval=FALSE}
+tvs <- read_ntfv("data/traffic.ntfv")
+```
+
+### Airport Groups (`.soa`)
+Defines sets of airports (e.g., `PARIS_METRO`). Use `resolve_recursion=TRUE` to automatically flatten nested groups into a simple list of airports.
+
+```{r soa, eval=FALSE}
+groups <- read_soa("data/groups.soa", resolve_recursion = TRUE)
+```
+
+---
+
+# 5. Rules & Logic (Advanced)
+
+These files contain pseudo-code logic. **rddr** parses these into structured data tables, extracting Regex patterns and boolean flags.
+
+### Flight Level Constraints (`.flc2`)
+Defines constraints on flight levels (Max/Min/Equal) based on entry/exit points.
+
+```{r flc, eval=FALSE}
+# parse_rules=TRUE extracts columns like 'condition_dep' and 'constraint_value'
+flc <- read_flc2("data/constraints.flc2", parse_rules = TRUE)
+```
+
+### RAD Routing Rules (`.awk`)
+Defines Routing Restrictions (RAD).
+
+```{r awk, eval=FALSE}
+rad <- read_awk("data/routing.awk", parse_rules = TRUE)
+
+# Filter for rules that force a specific route (REGLE)
+forced_routes <- rad[constraint_type == "ROUTING"]
+```
+
+### Route Extension Exceptions (`.rlex`)
+Exceptions where standard route length validation is relaxed.
+
+```{r rlex, eval=FALSE}
+exceptions <- read_rlex("data/extensions.rlex")
+```
+
+---
+
+# 6. Penalties & Costs
+
+Used for route optimization and simulation.
+
+### Turn Penalties (`.tax`)
+Defines forbidden or penalized turns (Point A -> Point B -> Point C).
+
+```{r tax, eval=FALSE}
 turns <- read_tax("data/penalties.tax")
-# Check for forbidden turns
-forbidden <- turns[point_2 == "KOK"]
-
-# Segment Penalties (Cost in NM for specific links)
-segment_costs <- read_pnl("data/costs.pnl")
 ```
 
-## Exceptions and Activations
+### Segment Costs (`.pnl`)
+Defines additional nautical mile (NM) penalties for traversing specific segments.
 
-```{r read-exceptions, eval=FALSE}
-# Route Length Extension Exceptions
-rlex <- read_rlex("data/extensions.rlex")
-
-# Military/Zone Opening Times
-# Handles versions 1, 2, and 3 automatically
-mil_areas <- read_mot("data/military.mot")
-
-# Filter for areas active during the morning peak
-morning_active <- mil_areas[start_time <= "0800" & end_time >= "0900"]
+```{r pnl, eval=FALSE}
+costs <- read_pnl("data/costs.pnl")
 ```
-
-# Summary
-
-The **rddr** package abstracts away the complexity of parsing legacy text formats. By converting everything into `data.table` structures, it allows analysts to focus on traffic flow, rule compliance, and network optimization rather than regular expressions and low-level file parsing.

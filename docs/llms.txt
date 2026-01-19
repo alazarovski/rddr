@@ -1,0 +1,340 @@
+# Introduction
+
+``` r
+library(rddr)
+library(data.table)
+#> Warning: package 'data.table' was built under R version 4.5.1
+```
+
+The **rddr** package is a comprehensive parser for the proprietary text
+formats used in aviation tools like **SAAM**, **Gasel**, and **Airspace
+Editor**. This guide covers every supported file format, grouped by
+functional category.
+
+------------------------------------------------------------------------
+
+# 1. Network Infrastructure
+
+These files define the static “hardware” of the network: airports,
+points, and runways.
+
+### Airports (`.arp`)
+
+Basic airport definitions including coordinates and FIR association.
+
+``` r
+airports <- read_arp("data/network.arp")
+#    icao     lat      lon     fir_id
+# 1: LFPG 49.0097   2.5479   LFFF_FIR
+```
+
+### Extended Airport Metadata (`.narp`)
+
+Includes sequencing parameters crucial for capacity analysis: Taxitime,
+TIS (Time to Insert), and TRS (Time to Remove).
+
+``` r
+narp <- read_narp("data/network.narp")
+# Check taxi times for specific airports
+head(narp[, .(icao, taxitime, tis, trs)])
+```
+
+### Navigation Points (`.nnpt`)
+
+Defines Waypoints, VORs, and NDBs.
+
+``` r
+points <- read_nnpt("data/points.nnpt")
+head(points)
+```
+
+### Standard Instrument Departures (`.sid`)
+
+Maps an airport (ICAO) to a list of allowed departure points.
+
+``` r
+sids <- read_sid("data/airports.sid")
+# Find all SIDs for Brussels
+brussels_sids <- sids[icao_apt == "EBBR"]
+```
+
+### Runway Configurations (`.runway`)
+
+Defines which runways (QFUs) are active during specific time windows and
+their sequencing capabilities.
+
+``` r
+runways <- read_runway("data/airport.runway")
+
+# Find the default configuration for today
+today_cfg <- runways[is_default == TRUE]
+```
+
+------------------------------------------------------------------------
+
+# 2. Airspace Geometry & Structure
+
+These files define the 3D shape and hierarchy of the airspace.
+
+### 2D Geometry (`.are`)
+
+Defines the lat/lon polygon vertices for “Volumes” (Airblocks).
+
+``` r
+geometry <- read_are("data/sectors.are")
+# Returns an ordered sequence of points ready for polygon creation
+head(geometry)
+```
+
+### Sector Definitions (`.sls`)
+
+Links the 2D Volumes (`.are`) to vertical Flight Level limits to create
+3D Elementary Sectors.
+
+``` r
+sectors <- read_sls("data/sectors.sls")
+# See which volume corresponds to a sector and its FL limits
+head(sectors[, .(sector_id, volume_id, fl_bottom, fl_top)])
+```
+
+### Airspace Hierarchy (`.spc`)
+
+Defines the parent-child relationships (e.g., ACC contains Sectors,
+Sectors contain Elementary Sectors).
+
+``` r
+hierarchy <- read_spc("data/airspace.spc")
+
+# Find all children of the "LFMM" ACC
+lfmm_components <- hierarchy[airspace_id == "LFMM"]
+```
+
+### Sector Visualization (`.aco`)
+
+Defines display attributes like RGB colors and transparency for
+airblocks.
+
+``` r
+colors <- read_aco("data/airspace.aco")
+```
+
+------------------------------------------------------------------------
+
+# 3. Operations & Configurations
+
+These files control how the airspace is managed dynamically over time.
+
+### Configurations (`.cfg`)
+
+**Crucial for Capacity Planning.** This file defines named
+“Configurations” (e.g., `CONF_A`, `SPLIT_NORTH`) by listing exactly
+which elementary sectors are open/collapsed together.
+
+``` r
+# Load configuration definitions
+configs <- read_cfg("data/sectors.cfg")
+
+# Example: Inspect what sectors make up the "CONF_1A" configuration for "LFFF"
+my_config <- configs[acc_id == "LFFF" & config_id == "CONF_1A"]
+print(my_config)
+#    acc_id config_id    sector_id
+# 1:   LFFF   CONF_1A     SECTOR_1
+# 2:   LFFF   CONF_1A     SECTOR_2
+```
+
+### Opening Scheme (`.cos`)
+
+The “Calendar” of the airspace. It maps a specific date and time window
+to a Configuration ID defined in the `.cfg` file.
+
+``` r
+schedule <- read_cos("data/opening_scheme.cos")
+
+# What configuration is active on 2024-06-01 at 09:00?
+active <- schedule[
+  date == "2024-06-01" & 
+  start_time <= "0900" & 
+  end_time >= "0900"
+]
+```
+
+### Military Opening Times (`.mot`)
+
+Defines activation windows for military zones (TSA/TRA/CDR). This
+function automatically handles Version 1, 2, and 3 file formats.
+
+``` r
+military <- read_mot("data/military.mot")
+```
+
+------------------------------------------------------------------------
+
+# 4. Traffic Flow & Routing
+
+These files define how aircraft move through the network.
+
+### Routes (`.rts`)
+
+Defines the sequence of points that make up an airway.
+
+``` r
+routes <- read_routes("data/network.rts")
+```
+
+### Traffic Volumes (`.ntfv`)
+
+Defines complex flow filters (Traffic Volumes) used for capacity
+monitoring. It parses flow logic like `IN`, `EX` (Exclude), and `AD`
+(Aerodrome) filters.
+
+``` r
+tvs <- read_ntfv("data/traffic.ntfv")
+```
+
+### Airport Groups (`.soa`)
+
+Defines sets of airports (e.g., `PARIS_METRO`). Use
+`resolve_recursion=TRUE` to automatically flatten nested groups into a
+simple list of airports.
+
+``` r
+groups <- read_soa("data/groups.soa", resolve_recursion = TRUE)
+```
+
+------------------------------------------------------------------------
+
+# 5. Rules & Logic (Advanced)
+
+These files contain pseudo-code logic. **rddr** parses these into
+structured data tables, extracting Regex patterns and boolean flags.
+
+### Flight Level Constraints (`.flc2`)
+
+Defines constraints on flight levels (Max/Min/Equal) based on entry/exit
+points.
+
+``` r
+# parse_rules=TRUE extracts columns like 'condition_dep' and 'constraint_value'
+flc <- read_flc2("data/constraints.flc2", parse_rules = TRUE)
+```
+
+### RAD Routing Rules (`.awk`)
+
+Defines Routing Restrictions (RAD).
+
+``` r
+rad <- read_awk("data/routing.awk", parse_rules = TRUE)
+
+# Filter for rules that force a specific route (REGLE)
+forced_routes <- rad[constraint_type == "ROUTING"]
+```
+
+### Route Extension Exceptions (`.rlex`)
+
+Exceptions where standard route length validation is relaxed.
+
+``` r
+exceptions <- read_rlex("data/extensions.rlex")
+```
+
+------------------------------------------------------------------------
+
+# 6. Penalties & Costs
+
+Used for route optimization and simulation.
+
+### Turn Penalties (`.tax`)
+
+Defines forbidden or penalized turns (Point A -\> Point B -\> Point C).
+
+``` r
+turns <- read_tax("data/penalties.tax")
+```
+
+### Segment Costs (`.pnl`)
+
+Defines additional nautical mile (NM) penalties for traversing specific
+segments.
+
+``` r
+costs <- read_pnl("data/costs.pnl")
+```
+
+# Package index
+
+## Network Infrastructure
+
+Airports, points, and runways
+
+- [`read_arp()`](https://github.com/alazarovski/rddr/reference/read_arp.md)
+  : Read ARP (Airport Definition) File
+- [`read_narp()`](https://github.com/alazarovski/rddr/reference/read_narp.md)
+  : Read NARP (Airport) File
+- [`read_nnpt()`](https://github.com/alazarovski/rddr/reference/read_nnpt.md)
+  : Read NNPT (Navigation Point) File
+- [`read_sid()`](https://github.com/alazarovski/rddr/reference/read_sid.md)
+  : Read SAAM Airport SID Points File
+- [`read_runway()`](https://github.com/alazarovski/rddr/reference/read_runway.md)
+  : Read RUNWAY File
+
+## Airspace & Geometry
+
+Sectors, volumes, and hierarchy
+
+- [`read_are()`](https://github.com/alazarovski/rddr/reference/read_are.md)
+  : Read ARE (Newmaxo ASCII Region) File
+- [`read_sls()`](https://github.com/alazarovski/rddr/reference/read_sls.md)
+  : Read SLS (Sector Level) File
+- [`read_spc()`](https://github.com/alazarovski/rddr/reference/read_spc.md)
+  : Read SPC (Airspace) File
+- [`read_aco()`](https://github.com/alazarovski/rddr/reference/read_aco.md)
+  : Read ACO (Airspace Colour) File
+
+## Operations & Configs
+
+Configurations and opening schemes
+
+- [`read_cfg()`](https://github.com/alazarovski/rddr/reference/read_cfg.md)
+  : Read CFG (Configuration) File
+- [`read_cos()`](https://github.com/alazarovski/rddr/reference/read_cos.md)
+  : Read COS (Opening Scheme) File
+- [`read_mot()`](https://github.com/alazarovski/rddr/reference/read_mot.md)
+  : Read MOT (Airspace Activation) File
+
+## Traffic & Routing
+
+Routes and traffic volumes
+
+- [`read_routes()`](https://github.com/alazarovski/rddr/reference/read_routes.md)
+  : Read RTS (Routes) File
+- [`read_ntfv()`](https://github.com/alazarovski/rddr/reference/read_ntfv.md)
+  : Read NTFV (Traffic Volume) File
+- [`read_soa()`](https://github.com/alazarovski/rddr/reference/read_soa.md)
+  : Read SOA (Area Definition) File
+
+## Rules & Logic
+
+Parsing complex logic files
+
+- [`read_flc2()`](https://github.com/alazarovski/rddr/reference/read_flc2.md)
+  : Read FLC2 (Rule/Constraint) File
+- [`read_awk()`](https://github.com/alazarovski/rddr/reference/read_awk.md)
+  : Read AWK (RAD Rule) File
+- [`read_rlex()`](https://github.com/alazarovski/rddr/reference/read_rlex.md)
+  : Read RLEX (Route Length Extension Exception) File
+
+## Penalties
+
+Costs and constraints
+
+- [`read_tax()`](https://github.com/alazarovski/rddr/reference/read_tax.md)
+  : Read TAX (Penalisation/Turn) File
+- [`read_pnl()`](https://github.com/alazarovski/rddr/reference/read_pnl.md)
+  : Read PNL (Penalisation/Segment) File
+
+# Articles
+
+### All vignettes
+
+- [Complete Guide to Parsing SAAM/Gasel
+  Data](https://github.com/alazarovski/rddr/articles/rddr-workflow.md):
