@@ -6,7 +6,7 @@
 #' This function parses SAAM `.flc2` files. It handles:
 #' \itemize{
 #'   \item Hierarchical Sections and Rule headers.
-#'   \item \strong{Nested Logic Blocks}: Handles \code{if(...) \{} ... \}} structures by flattening the logic.
+#'   \item \strong{Nested Logic Blocks}: Handles \code{if(...) { ... }} structures by flattening the logic.
 #'   \item \strong{Syntax Variations}: Supports both Regex (\code{~ /.../}) and String Equality (\code{== "..."}).
 #' }
 #'
@@ -14,6 +14,14 @@
 #' @param parse_rules Logical. If \code{TRUE}, extracts structured columns.
 #'
 #' @return A \code{data.table}.
+#' If \code{parse_rules = TRUE}, the following columns are added:
+#' \itemize{
+#'   \item \code{condition_dep}, \code{condition_arr}, \code{condition_point}, \code{condition_via}, \code{condition_climb_rate}: Regex patterns or exact strings.
+#'   \item \code{exclude_dep}, \code{exclude_arr}, etc.: Logical flags (TRUE if the condition is negated with '!').
+#'   \item \code{constraint_type}: "ROUTING" (for REGLE), "MAX", "MIN", or "EQUAL" (for FL_CONT).
+#'   \item \code{constraint_value}: The routing string (if type is ROUTING) or the Flight Level (as integer).
+#' }
+#'
 #' @importFrom data.table data.table rbindlist copy := fcase
 #' @importFrom stringi stri_trim_both stri_match_first_regex
 #' @export
@@ -43,12 +51,7 @@ read_flc2 <- function(flc2_file, parse_rules = FALSE) {
   pat_rad_start <- "^\\s*#RAD\\s+"
   pat_end <- "^\\s*#END"
   pat_commented_code <- "^\\s*#\\s*if\\s*\\("
-
-  # Pattern to detect block start: "if ( CONDITION ) {"
-  # We capture the condition inside the parens
   pat_block_start <- "^\\s*if\\s*\\((.*)\\)\\s*\\{\\s*$"
-
-  # Pattern to detect block end: "}"
   pat_block_end <- "^\\s*\\}\\s*$"
 
   for (line in raw_lines) {
@@ -96,22 +99,16 @@ read_flc2 <- function(flc2_file, parse_rules = FALSE) {
       next
     }
 
-    # 3. Handle Code Blocks ({ and })
-
-    # Check for Block Start: if ( ... ) {
+    # 3. Handle Code Blocks
     block_start_match <- stringi::stri_match_first_regex(line_trim, pat_block_start)
     if (!is.na(block_start_match[1,1])) {
-      # Extract the condition (e.g., 'DEP == "EBBR"')
-      # Wrap it in parens to ensure safety when combining
       cond <- paste0("(", block_start_match[1, 2], ")")
       block_conditions <- c(block_conditions, cond)
-      next # Proceed to next line (we don't save the '{' line itself as a rule row)
+      next
     }
 
-    # Check for Block End: }
     if (grepl(pat_block_end, line_trim)) {
       if (length(block_conditions) > 0) {
-        # Pop the last condition
         block_conditions <- block_conditions[-length(block_conditions)]
       }
       next
@@ -128,13 +125,9 @@ read_flc2 <- function(flc2_file, parse_rules = FALSE) {
       } else { next }
     }
 
-    # If we found code and we are in a rule context
     if (!is.na(current_rule_id)) {
-
-      # CRITICAL: Combine with Parent Block Conditions if any exist
       final_code <- code_content
       if (length(block_conditions) > 0) {
-        # Create a combined string: (Parent) && (Child)
         parent_logic <- paste(block_conditions, collapse = " && ")
         final_code <- paste(parent_logic, "&&", code_content)
       }
@@ -146,7 +139,7 @@ read_flc2 <- function(flc2_file, parse_rules = FALSE) {
         properties = current_props,
         airac = current_airac,
         description = current_desc,
-        rule_code = final_code, # We save the flattened, combined logic
+        rule_code = final_code,
         is_active = is_active_code
       )
     }
@@ -154,7 +147,6 @@ read_flc2 <- function(flc2_file, parse_rules = FALSE) {
 
   dt <- data.table::rbindlist(results)
 
-  # --- Phase 2: Content Parsing ---
   if (parse_rules && nrow(dt) > 0) {
     dt <- .parse_flc_constraints(dt)
   }
@@ -166,32 +158,11 @@ read_flc2 <- function(flc2_file, parse_rules = FALSE) {
 #' @keywords internal
 .parse_flc_constraints <- function(dt) {
 
-  # Helper to extract Condition + Negation
   extract_condition <- function(code_col, keyword) {
-    # We need to support two patterns:
-    # 1. Regex:  KEY ~ /pattern/
-    # 2. String: KEY == "pattern"
-
-    # Combined Regex:
-    # (!?)              -> Group 1: Optional negation
-    # \s*\(?\s*KEY\s*   -> Keyword
-    # (?:               -> Start non-capturing group for alternatives
-    #   ~\s*/([^/]+)/   -> Group 2: Regex content
-    #   |               -> OR
-    #   ==\s*"([^"]+)"  -> Group 3: String content
-    # )
-
     regex <- paste0("(!?)\\s*\\(?\\s*", keyword, "\\s*(?:~\\s*/([^/]+)/|==\\s*\"([^\"]+)\")")
     matches <- stringi::stri_match_first_regex(code_col, regex)
-
-    # The pattern could be in Group 2 (Regex) or Group 3 (String). Coalesce them.
-    # ifelse(is.na(Group2), Group3, Group2)
     pat <- ifelse(is.na(matches[, 3]), matches[, 4], matches[, 3])
-
-    list(
-      pattern = pat,
-      is_excluded = (matches[, 2] == "!")
-    )
+    list(pattern = pat, is_excluded = (matches[, 2] == "!"))
   }
 
   dep_res   <- extract_condition(dt$rule_code, "DEP")
@@ -216,11 +187,7 @@ read_flc2 <- function(flc2_file, parse_rules = FALSE) {
   bool_cols <- c("exclude_dep", "exclude_arr", "exclude_point", "exclude_via", "exclude_climb_rate")
   dt[, (bool_cols) := lapply(.SD, function(x) ifelse(is.na(x), FALSE, x)), .SDcols = bool_cols]
 
-  # 2. Extract Constraint (FL_CONT)
-  # Matches: FL_CONT=-245, FL_CONT = -245, FL_CONT > 245
   fl_matches <- stringi::stri_match_first_regex(dt$rule_code, "FL_CONT\\s*=\\s*([-+>]?)(\\d+)")
-
-  # 3. Extract REGLE (Routing)
   regle_matches <- stringi::stri_match_first_regex(dt$rule_code, 'REGLE\\s*=\\s*REGLE\\s*"([^"]+)"')
 
   dt[, `:=`(
@@ -229,7 +196,6 @@ read_flc2 <- function(flc2_file, parse_rules = FALSE) {
     raw_regle_val = regle_matches[, 2]
   )]
 
-  # Determine Type
   dt[, constraint_type := data.table::fcase(
     !is.na(raw_regle_val), "ROUTING",
     raw_fl_sign %in% c("-", "<"), "MAX",

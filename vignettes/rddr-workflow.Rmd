@@ -1,0 +1,184 @@
+---
+title: "Parsing SAAM/Gasel Data with rddr"
+author: ""
+date: "`r format(Sys.Date())`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 3
+vignette: >
+  %\VignetteIndexEntry{Parsing SAAM/Gasel Data with rddr}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+# Introduction
+
+The **rddr** package provides a robust, high-performance interface for parsing the proprietary text-based file formats used in **SAAM** and **Gasel** aviation tools.
+
+Aviation data often comes in complex, non-standard text formats that mix hierarchical structures, geometric definitions, and pseudo-code logic. Instead of writing custom regex parsers for every analysis, **rddr** transforms `.awk`, `.flc2`, `.soa`, `.mot` and other formats into tidy `data.table`s ready for filtering and analysis.
+
+## Supported Formats
+
+| File Ext | Function     | Description                              |
+|----------|--------------|------------------------------------------|
+| `.arp`   | `read_arp`   | Airport coordinates and FIRs             |
+| `.runway`| `read_runway`| Runway configurations & taxonomy         |
+| `.soa`   | `read_soa`   | Area definitions (recursive groups)      |
+| `.aco`   | `read_aco`   | Airspace sector colors & levels          |
+| `.flc2`  | `read_flc2`  | Flight Level Constraints (FL_CONT)       |
+| `.awk`   | `read_awk`   | RAD Routing Rules (REGLE)                |
+| `.tax`   | `read_tax`   | Turning penalties                        |
+| `.pnl`   | `read_pnl`   | Segment cost penalties                   |
+| `.rlex`  | `read_rlex`  | Route length extension exceptions        |
+| `.mot`   | `read_mot`   | Military/Airspace opening times          |
+
+> **Note:** Example chunks that read external files use `eval = FALSE` so that the vignette builds even if those files are not available in your environment. Remove that option when running locally with the corresponding inputs.
+
+# 1. Building the Network Environment
+
+Before analyzing specific trajectories or rules, we must first load the static network definitions.
+
+## Setup
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+```{r libraries}
+library(rddr)
+library(data.table)
+```
+
+## Airports and Coordinates
+
+The `.arp` format stores coordinates in **minutes**. `read_arp()` automatically converts these to **decimal degrees** for immediate use in mapping.
+
+```{r read-arp, eval=FALSE}
+# Load Airport Definitions
+airports <- read_arp("data/network.arp")
+
+# Preview
+head(airports)
+#    icao     lat      lon     fir_id
+# 1: EBBR 50.9014   4.4844   EBBU_FIR
+# 2: LFPG 49.0097   2.5479   LFFF_FIR
+```
+
+## Area Definitions (Groups)
+
+The `.soa` format defines groups of airports (e.g., `LONDON_GROUP`). These definitions are often **recursive** (a group containing other groups). Use `resolve_recursion = TRUE` to **flatten** these hierarchies instantly.
+
+```{r read-soa, eval=FALSE}
+# Read Area Groups
+areas <- read_soa("data/groups.soa", resolve_recursion = TRUE)
+
+# Find all airports in the "SCANDINAVIA" group
+scandi_airports <- areas[area_id == "SCANDINAVIA", member_id]
+```
+
+## Sectors and Runways
+
+Visualizing sectors and understanding runway constraints are key for capacity analysis.
+
+```{r read-aco-runway, eval=FALSE}
+# Read Sector Colors (returns RGBA and Hex codes)
+sectors <- read_aco("data/airspace.aco")
+
+# Read Runway configurations
+runways <- read_runway("data/airport.runway")
+```
+
+# 2. Analyzing Logic: RAD Rules & Constraints
+
+A powerful feature of **rddr** is parsing the pseudo-code logic found in `.flc2` (Level Constraints) and `.awk` (Routing) files. These files can contain complex `if`/`then` logic, nested blocks, and regex matching.
+
+## Parsing Flight Level Constraints (`.flc2`)
+
+Instead of treating rule code as simple text strings, set `parse_rules = TRUE` to extract actionable columns like `DEP`, `ARR`, and `FL_CONT`.
+
+```{r read-flc2, eval=FALSE}
+# Parse Flight Level Constraints
+# This handles nested 'if' blocks and extracts regex patterns
+flc <- read_flc2("data/constraints.flc2", parse_rules = TRUE)
+
+# Inspect the structured output
+head(flc[, .(rule_id, condition_dep, condition_arr, constraint_type, constraint_value)])
+```
+
+### Practical Example: Filtering Rules for a Flight
+
+Imagine you are analyzing a flight from Brussels (**EBBR**) to Paris (**LFPG**). You want to know which flight level constraints apply.
+
+```{r flc-filter, eval=FALSE}
+# Define flight parameters
+my_dep <- "EBBR"
+my_arr <- "LFPG"
+
+# Filter active rules that match our flight
+applicable_rules <- flc[
+  is_active == TRUE &
+  (is.na(condition_dep) | grepl(condition_dep, my_dep)) &
+  (is.na(condition_arr) | grepl(condition_arr, my_arr))
+]
+
+applicable_rules[, .(rule_id, constraint_type, constraint_value)]
+# Example output: 
+#       rule_id constraint_type constraint_value
+# 1: SAAM_R001             MAX              245
+# 2: SAAM_R055             MIN              195
+```
+
+## Parsing Routing Rules (`.awk`)
+
+Routing rules are similar but often involve `REGLE` (routing strings) and `RFL` (Requested Flight Level) conditions.
+
+```{r read-awk, eval=FALSE}
+rad_rules <- read_awk("data/routing.awk", parse_rules = TRUE)
+
+# Find rules that force a specific routing for heavy jets (RFL >= 300)
+# flying out of the London area
+forced_routes <- rad_rules[
+  constraint_type == "ROUTING" &
+  condition_rfl_min >= 300 &
+  grepl("EG[A-Z]{2}", condition_dep)
+]
+
+# View the enforced routing string
+head(forced_routes[, .(rule_id, routing_constraint)])
+```
+
+# 3. Handling Penalties and Exceptions
+
+For optimization or simulation workflows, you often need to load costs and exceptions.
+
+## Turn Penalties (`.tax`)
+
+The `.tax` file defines geometric penalties for specific turns (Point1 -> Point2 -> Point3).
+
+```{r read-tax, eval=FALSE}
+turns <- read_tax("data/penalties.tax")
+
+# Check if turning at 'ADUTO' coming from 'KOK' carries a penalty
+turns[point_1 == "KOK" & point_2 == "ADUTO"]
+```
+
+## Military Opening Times (`.mot`)
+
+The `read_mot()` reader handles versions 1, 2, and 3 of the format automatically, standardizing opening times and level restrictions.
+
+```{r read-mot, eval=FALSE}
+mil_areas <- read_mot("data/military.mot")
+
+# Filter for areas active during the morning peak
+morning_active <- mil_areas[start_time <= "0800" & end_time >= "0900"]
+```
+
+# 4. Summary
+
+The **rddr** package abstracts away the complexity of parsing legacy text formats. By converting everything into `data.table` structures, it allows analysts to focus on traffic flow, rule compliance, and network optimization rather than regular expressions and low-level file parsing.

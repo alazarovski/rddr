@@ -2,11 +2,11 @@
 % Please edit documentation in R/read_flc2.R
 \name{.parse_flc_constraints}
 \alias{.parse_flc_constraints}
-\title{Internal helper to parse regex constraints from rule code}
+\title{Internal helper to parse constraints (Regex OR Equality)}
 \usage{
 .parse_flc_constraints(dt)
 }
 \description{
-Internal helper to parse regex constraints from rule code
+Internal helper to parse constraints (Regex OR Equality)
 }
 \keyword{internal}

@@ -2,41 +2,38 @@
 % Please edit documentation in R/read_awk.R
 \name{read_awk}
 \alias{read_awk}
-\title{Read AWK/FLC2 (Rule) File}
+\title{Read AWK (RAD Rule) File}
 \usage{
-read_awk(awk_file)
+read_awk(awk_file, parse_rules = FALSE)
 }
 \arguments{
-\item{awk_file}{Path to the .awk or .flc2 file.}
+\item{awk_file}{Path to the .awk file.}
+
+\item{parse_rules}{Logical. If \code{TRUE}, extracts structured columns:
+\code{condition_dep}, \code{condition_arr}, \code{condition_rfl_min}, \code{condition_rfl_max},
+\code{routing_constraint}.}
 }
 \value{
-A \code{data.table} where each row represents a line of code within a rule, with columns:
+A \code{data.table}.
+If \code{parse_rules = TRUE}, columns include:
 \itemize{
-\item \code{section_depth}: Integer (1, 2, 3...).
-\item \code{section_name}: Character (Name of the section).
-\item \code{rule_id}: Character (The RAD Rule ID).
-\item \code{properties}: Character (Raw property string, e.g., key=value).
-\item \code{airac}: Character (AIRAC cycle if present).
-\item \code{description}: Character (Free text comment).
-\item \code{rule_code}: Character (The actual AWK/Logic line).
+\item \code{condition_dep/arr/...}: Regex patterns.
+\item \code{exclude_dep/arr/...}: Logical flags for negation.
+\item \code{condition_rfl_min/max}: Integer limits for Requested Flight Level.
+\item \code{routing_constraint}: The routing string (e.g., " - BUGOR DERAD").
 }
 }
 \description{
-This function parses SAAM Rule files. These files are hierarchical:
-\itemize{
-\item \strong{Sections} (\code{#SECTION_X}): Group rules visually.
-\item \strong{Rules} (\code{#RAD}): Define the metadata for a specific rule.
-\item \strong{Body}: The actual logic (AWK syntax) following a Rule header.
-}
+This function parses SAAM \code{.awk} files. It handles the hierarchical structure,
+nested logic blocks, and extracts Routing constraints.
 
-\strong{Parsing Logic}:
+\strong{Structure}:
 \itemize{
-\item Lines starting with \code{#SECTION} update the current section context.
-\item Lines starting with \code{#RAD} start a new rule and parse its ID, properties, and comments.
-\item Lines starting with \code{#END} stop the parsing.
-\item Other lines (that don't start with \code{#}) are treated as the "Code" or "Definition" of the current rule.
+\item Sections (\code{#SECTION})
+\item Rule Headers (\code{#RAD})
+\item Logic Lines (\code{if ... REGLE=REGLE ...})
 }
 }
 \details{
-Reads a .awk or .flc2 file defining RAD (Route Availability Document) rules or Flight Level Constraints.
+Reads a .awk file defining RAD Routing Rules.
 }

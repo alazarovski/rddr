@@ -2,40 +2,33 @@
 % Please edit documentation in R/read_flc2.R
 \name{read_flc2}
 \alias{read_flc2}
-\title{Read FLC2 (Flight Level Constraints) File}
+\title{Read FLC2 (Rule/Constraint) File}
 \usage{
 read_flc2(flc2_file, parse_rules = FALSE)
 }
 \arguments{
 \item{flc2_file}{Path to the .flc2 file.}
 
-\item{parse_rules}{Logical. If \code{TRUE}, the function attempts to parse the \code{rule_code}
-column to extract structured constraints (DEP, ARR, POINT, FL limit).
-Defaults to \code{FALSE} (returns raw logic strings).}
+\item{parse_rules}{Logical. If \code{TRUE}, extracts structured columns.}
 }
 \value{
 A \code{data.table}.
-If \code{parse_rules = FALSE} (default):
+If \code{parse_rules = TRUE}, the following columns are added:
 \itemize{
-\item \code{rule_id}, \code{section_name}, \code{rule_code} (raw string), etc.
-}
-If \code{parse_rules = TRUE}, columns are added:
-\itemize{
-\item \code{condition_dep}: Regex for departure airport(s).
-\item \code{condition_arr}: Regex for arrival airport(s).
-\item \code{condition_point}: Regex for route point(s).
-\item \code{constraint_type}: "MAX" (for ceiling), "MIN" (for floor), or "EQUAL".
-\item \code{constraint_fl}: Integer flight level.
+\item \code{condition_dep}, \code{condition_arr}, \code{condition_point}, \code{condition_via}, \code{condition_climb_rate}: Regex patterns or exact strings.
+\item \code{exclude_dep}, \code{exclude_arr}, etc.: Logical flags (TRUE if the condition is negated with '!').
+\item \code{constraint_type}: "ROUTING" (for REGLE), "MAX", "MIN", or "EQUAL" (for FL_CONT).
+\item \code{constraint_value}: The routing string (if type is ROUTING) or the Flight Level (as integer).
 }
 }
 \description{
-This function parses SAAM \code{.flc2} files. These files share the exact same structure as \code{.awk} files:
+This function parses SAAM \code{.flc2} files. It handles:
 \itemize{
-\item \strong{Sections} (\code{#SECTION_X}): Group rules visually.
-\item \strong{Rules} (\code{#RAD}): Define the metadata for a specific rule.
-\item \strong{Body}: The actual logic (Constraint syntax) following a Rule header.
+\item Hierarchical Sections and Rule headers.
+\item \strong{Nested Logic Blocks}: Handles \code{if(...) { ... }} structures by flattening the logic.
+\item \strong{Syntax Variations}: Supports both Regex (\code{~ /.../}) and String Equality (\code{== "..."}).
 }
 }
 \details{
-Reads a .flc2 (or .awk) file defining Flight Level Constraints or RAD rules.
+Reads a .flc2 (or .awk) file defining RAD Rules.
 }
