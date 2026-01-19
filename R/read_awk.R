@@ -213,5 +213,11 @@ read_awk <- function(awk_file, parse_rules = FALSE) {
 
   dt[, routing_constraint := regle_matches[, 2]]
 
+  dt[, constraint_type := data.table::fcase(
+    !is.na(routing_constraint), "ROUTING",
+    (!is.na(condition_rfl_min) | !is.na(condition_rfl_max)), "LEVEL",
+    default = NA_character_
+  )]
+
   return(dt)
 }

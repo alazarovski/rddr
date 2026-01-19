@@ -1,0 +1,5 @@
+#SECTION_1 - LEVEL_CAPS
+#RAD R001 - MAX FL245 for Short Haul
+if (DEP == "LFPG" && ARR == "EBBR") {
+  FL_CONT = < 245
+}

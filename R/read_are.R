@@ -80,7 +80,8 @@ read_are <- function(are_file) {
     is_header = !is.na(V4) & V4 != "",
 
     # Extract Volume ID (from Header V15)
-    raw_id = data.table::na_if(V15, "")
+    # Replace empty strings with NA using standard data.table logic
+    raw_id = fifelse(V15 == "", NA_character_, V15)
   )]
 
   # --- 3. Fill Metadata ---
