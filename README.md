@@ -91,16 +91,6 @@ Defines Waypoints, VORs, NDBs, and other fixes.
 
 ``` r
 points <- read_nnpt(file.path(data_path, "points.nnpt"))
-#> Warning in data.table::fread(nnpt_file, sep = ";", skip = 1, header = FALSE, :
-#> Column name 'point_id' (colClasses[[1]][1]) not found
-#> Warning in data.table::fread(nnpt_file, sep = ";", skip = 1, header = FALSE, :
-#> Column name 'type' (colClasses[[1]][2]) not found
-#> Warning in data.table::fread(nnpt_file, sep = ";", skip = 1, header = FALSE, :
-#> Column name 'name' (colClasses[[1]][3]) not found
-#> Warning in data.table::fread(nnpt_file, sep = ";", skip = 1, header = FALSE, :
-#> Column name 'lat' (colClasses[[2]][1]) not found
-#> Warning in data.table::fread(nnpt_file, sep = ";", skip = 1, header = FALSE, :
-#> Column name 'lon' (colClasses[[2]][2]) not found
 head(points, 2)
 #>    point_id   type   lat   lon        name
 #>      <char> <char> <num> <num>      <char>

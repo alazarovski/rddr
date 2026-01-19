@@ -77,7 +77,7 @@ head(narp[, .(icao, taxitime, tis, trs)], 2)
 #### Navigation Points (`.nnpt`)
 Defines Waypoints, VORs, NDBs, and other fixes.
 
-```{r nnpt}
+```{r nnpt, warning=FALSE, messages = F}
 points <- read_nnpt(file.path(data_path, "points.nnpt"))
 head(points, 2)
 ```
