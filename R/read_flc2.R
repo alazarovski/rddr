@@ -1,34 +1,19 @@
-#' Read FLC2 (Flight Level Constraints) File
+#' Read FLC2 (Rule/Constraint) File
 #'
-#' Reads a .flc2 (or .awk) file defining Flight Level Constraints or RAD rules.
+#' Reads a .flc2 (or .awk) file defining RAD Rules.
 #'
 #' @description
-#' This function parses SAAM `.flc2` files. These files share the exact same structure as `.awk` files:
+#' This function parses SAAM `.flc2` files. It handles:
 #' \itemize{
-#'   \item \strong{Sections} (\code{#SECTION_X}): Group rules visually.
-#'   \item \strong{Rules} (\code{#RAD}): Define the metadata for a specific rule.
-#'   \item \strong{Body}: The actual logic (Constraint syntax) following a Rule header.
+#'   \item Hierarchical Sections and Rule headers.
+#'   \item \strong{Nested Logic Blocks}: Handles \code{if(...) \{} ... \}} structures by flattening the logic.
+#'   \item \strong{Syntax Variations}: Supports both Regex (\code{~ /.../}) and String Equality (\code{== "..."}).
 #' }
 #'
 #' @param flc2_file Path to the .flc2 file.
-#' @param parse_rules Logical. If \code{TRUE}, the function attempts to parse the \code{rule_code}
-#'   column to extract structured constraints (DEP, ARR, POINT, FL limit).
-#'   Defaults to \code{FALSE} (returns raw logic strings).
+#' @param parse_rules Logical. If \code{TRUE}, extracts structured columns.
 #'
 #' @return A \code{data.table}.
-#' If \code{parse_rules = FALSE} (default):
-#' \itemize{
-#'   \item \code{rule_id}, \code{section_name}, \code{rule_code} (raw string), etc.
-#' }
-#' If \code{parse_rules = TRUE}, columns are added:
-#' \itemize{
-#'   \item \code{condition_dep}: Regex for departure airport(s).
-#'   \item \code{condition_arr}: Regex for arrival airport(s).
-#'   \item \code{condition_point}: Regex for route point(s).
-#'   \item \code{constraint_type}: "MAX" (for ceiling), "MIN" (for floor), or "EQUAL".
-#'   \item \code{constraint_fl}: Integer flight level.
-#' }
-#'
 #' @importFrom data.table data.table rbindlist copy := fcase
 #' @importFrom stringi stri_trim_both stri_match_first_regex
 #' @export
@@ -38,22 +23,33 @@ read_flc2 <- function(flc2_file, parse_rules = FALSE) {
   raw_lines <- readLines(flc2_file, warn = FALSE)
   if (length(raw_lines) == 0) return(data.table::data.table())
 
-  # --- Phase 1: File Parsing (Section/Rule Structure) ---
+  # --- Phase 1: Structure Parsing ---
   results <- list()
 
-  # State variables
+  # Context Variables
   current_section_depth <- NA_integer_
   current_section_name <- NA_character_
-
   current_rule_id <- NA_character_
   current_props <- NA_character_
   current_airac <- NA_character_
   current_desc <- NA_character_
 
-  # Compiled Regex Patterns
+  # Block Context Stack (List of conditions from parent 'if' statements)
+  # When we enter 'if (A) {', we push 'A' here.
+  block_conditions <- character()
+
+  # Regex Patterns
   pat_section <- "^\\s*#SECTION_(\\d+)\\s*-\\s*(.*)$"
   pat_rad_start <- "^\\s*#RAD\\s+"
   pat_end <- "^\\s*#END"
+  pat_commented_code <- "^\\s*#\\s*if\\s*\\("
+
+  # Pattern to detect block start: "if ( CONDITION ) {"
+  # We capture the condition inside the parens
+  pat_block_start <- "^\\s*if\\s*\\((.*)\\)\\s*\\{\\s*$"
+
+  # Pattern to detect block end: "}"
+  pat_block_end <- "^\\s*\\}\\s*$"
 
   for (line in raw_lines) {
     line_trim <- stringi::stri_trim_both(line)
@@ -61,7 +57,7 @@ read_flc2 <- function(flc2_file, parse_rules = FALSE) {
     if (line_trim == "") next
     if (grepl(pat_end, line_trim)) break
 
-    # Check Section
+    # 1. Section Headers
     if (grepl("^\\s*#SECTION", line_trim)) {
       match <- stringi::stri_match_first_regex(line_trim, pat_section)
       if (!is.na(match[1, 1])) {
@@ -71,11 +67,12 @@ read_flc2 <- function(flc2_file, parse_rules = FALSE) {
         current_props <- NA_character_
         current_airac <- NA_character_
         current_desc <- NA_character_
+        block_conditions <- character() # Reset blocks on new section
       }
       next
     }
 
-    # Check Rule Header
+    # 2. Rule Headers
     if (grepl(pat_rad_start, line_trim)) {
       content <- sub(pat_rad_start, "", line_trim)
       parts <- strsplit(content, "\\s+")[[1]]
@@ -86,27 +83,62 @@ read_flc2 <- function(flc2_file, parse_rules = FALSE) {
       if (!is.na(prop_match[1,1])) {
         current_props <- stringi::stri_trim_both(prop_match[1, 2])
         rest <- prop_match[1, 3]
-      } else {
-        current_props <- NA_character_
-      }
+      } else { current_props <- NA_character_ }
 
       airac_match <- stringi::stri_match_first_regex(rest, "AIRAC\\s+(\\d+)")
       if (!is.na(airac_match[1,1])) {
         current_airac <- airac_match[1, 2]
         rest <- sub("AIRAC\\s+\\d+", "", rest)
-      } else {
-        current_airac <- NA_character_
-      }
+      } else { current_airac <- NA_character_ }
 
       current_desc <- stringi::stri_trim_both(rest)
+      block_conditions <- character() # Reset blocks on new rule
       next
     }
 
-    # Check Comments
-    if (startsWith(line_trim, "#")) next
+    # 3. Handle Code Blocks ({ and })
 
-    # Record Code Line
+    # Check for Block Start: if ( ... ) {
+    block_start_match <- stringi::stri_match_first_regex(line_trim, pat_block_start)
+    if (!is.na(block_start_match[1,1])) {
+      # Extract the condition (e.g., 'DEP == "EBBR"')
+      # Wrap it in parens to ensure safety when combining
+      cond <- paste0("(", block_start_match[1, 2], ")")
+      block_conditions <- c(block_conditions, cond)
+      next # Proceed to next line (we don't save the '{' line itself as a rule row)
+    }
+
+    # Check for Block End: }
+    if (grepl(pat_block_end, line_trim)) {
+      if (length(block_conditions) > 0) {
+        # Pop the last condition
+        block_conditions <- block_conditions[-length(block_conditions)]
+      }
+      next
+    }
+
+    # 4. Process Logic Lines
+    is_active_code <- TRUE
+    code_content <- line_trim
+
+    if (startsWith(line_trim, "#")) {
+      if (grepl(pat_commented_code, line_trim)) {
+        is_active_code <- FALSE
+        code_content <- sub("^\\s*#\\s*", "", line_trim)
+      } else { next }
+    }
+
+    # If we found code and we are in a rule context
     if (!is.na(current_rule_id)) {
+
+      # CRITICAL: Combine with Parent Block Conditions if any exist
+      final_code <- code_content
+      if (length(block_conditions) > 0) {
+        # Create a combined string: (Parent) && (Child)
+        parent_logic <- paste(block_conditions, collapse = " && ")
+        final_code <- paste(parent_logic, "&&", code_content)
+      }
+
       results[[length(results) + 1]] <- list(
         section_depth = current_section_depth,
         section_name = current_section_name,
@@ -114,52 +146,105 @@ read_flc2 <- function(flc2_file, parse_rules = FALSE) {
         properties = current_props,
         airac = current_airac,
         description = current_desc,
-        rule_code = line_trim
+        rule_code = final_code, # We save the flattened, combined logic
+        is_active = is_active_code
       )
     }
   }
 
   dt <- data.table::rbindlist(results)
 
-  # --- Phase 2: Optional Structured Parsing ---
+  # --- Phase 2: Content Parsing ---
   if (parse_rules && nrow(dt) > 0) {
     dt <- .parse_flc_constraints(dt)
   }
 
-  return(dt[])
+  return(dt)
 }
 
-#' Internal helper to parse regex constraints from rule code
+#' Internal helper to parse constraints (Regex OR Equality)
 #' @keywords internal
 .parse_flc_constraints <- function(dt) {
-  # We work by reference on the input dt (which is already a copy from read_flc2 logic)
 
-  # 1. Extract Conditionals (DEP, ARR, POINT)
+  # Helper to extract Condition + Negation
+  extract_condition <- function(code_col, keyword) {
+    # We need to support two patterns:
+    # 1. Regex:  KEY ~ /pattern/
+    # 2. String: KEY == "pattern"
+
+    # Combined Regex:
+    # (!?)              -> Group 1: Optional negation
+    # \s*\(?\s*KEY\s*   -> Keyword
+    # (?:               -> Start non-capturing group for alternatives
+    #   ~\s*/([^/]+)/   -> Group 2: Regex content
+    #   |               -> OR
+    #   ==\s*"([^"]+)"  -> Group 3: String content
+    # )
+
+    regex <- paste0("(!?)\\s*\\(?\\s*", keyword, "\\s*(?:~\\s*/([^/]+)/|==\\s*\"([^\"]+)\")")
+    matches <- stringi::stri_match_first_regex(code_col, regex)
+
+    # The pattern could be in Group 2 (Regex) or Group 3 (String). Coalesce them.
+    # ifelse(is.na(Group2), Group3, Group2)
+    pat <- ifelse(is.na(matches[, 3]), matches[, 4], matches[, 3])
+
+    list(
+      pattern = pat,
+      is_excluded = (matches[, 2] == "!")
+    )
+  }
+
+  dep_res   <- extract_condition(dt$rule_code, "DEP")
+  arr_res   <- extract_condition(dt$rule_code, "ARR")
+  point_res <- extract_condition(dt$rule_code, "POINT")
+  via_res   <- extract_condition(dt$rule_code, "VIA")
+  climb_res <- extract_condition(dt$rule_code, "CLIMB_RATE")
+
   dt[, `:=`(
-    condition_dep   = stringi::stri_match_first_regex(rule_code, "DEP\\s*~\\s*/([^/]+)/")[,2],
-    condition_arr   = stringi::stri_match_first_regex(rule_code, "ARR\\s*~\\s*/([^/]+)/")[,2],
-    condition_point = stringi::stri_match_first_regex(rule_code, "POINT\\s*~\\s*/([^/]+)/")[,2]
+    condition_dep        = dep_res$pattern,
+    exclude_dep          = dep_res$is_excluded,
+    condition_arr        = arr_res$pattern,
+    exclude_arr          = arr_res$is_excluded,
+    condition_point      = point_res$pattern,
+    exclude_point        = point_res$is_excluded,
+    condition_via        = via_res$pattern,
+    exclude_via          = via_res$is_excluded,
+    condition_climb_rate = climb_res$pattern,
+    exclude_climb_rate   = climb_res$is_excluded
   )]
+
+  bool_cols <- c("exclude_dep", "exclude_arr", "exclude_point", "exclude_via", "exclude_climb_rate")
+  dt[, (bool_cols) := lapply(.SD, function(x) ifelse(is.na(x), FALSE, x)), .SDcols = bool_cols]
 
   # 2. Extract Constraint (FL_CONT)
   # Matches: FL_CONT=-245, FL_CONT = -245, FL_CONT > 245
-  matches <- stringi::stri_match_first_regex(dt$rule_code, "FL_CONT\\s*=\\s*([-+>]?)(\\d+)")
+  fl_matches <- stringi::stri_match_first_regex(dt$rule_code, "FL_CONT\\s*=\\s*([-+>]?)(\\d+)")
+
+  # 3. Extract REGLE (Routing)
+  regle_matches <- stringi::stri_match_first_regex(dt$rule_code, 'REGLE\\s*=\\s*REGLE\\s*"([^"]+)"')
 
   dt[, `:=`(
-    raw_sign      = matches[, 2],
-    constraint_fl = as.integer(matches[, 3])
+    raw_fl_sign   = fl_matches[, 2],
+    raw_fl_val    = fl_matches[, 3],
+    raw_regle_val = regle_matches[, 2]
   )]
 
-  # 3. Determine Constraint Type
+  # Determine Type
   dt[, constraint_type := data.table::fcase(
-    raw_sign %in% c("-", "<"), "MAX",    # Ceiling
-    raw_sign %in% c("+", ">"), "MIN",    # Floor
-    raw_sign == "",            "EQUAL",  # Exact
+    !is.na(raw_regle_val), "ROUTING",
+    raw_fl_sign %in% c("-", "<"), "MAX",
+    raw_fl_sign %in% c("+", ">"), "MIN",
+    raw_fl_sign == "",            "EQUAL",
     default = NA_character_
   )]
 
-  # Cleanup temp column
-  dt[, raw_sign := NULL]
+  dt[, constraint_value := data.table::fcase(
+    constraint_type == "ROUTING", raw_regle_val,
+    !is.na(raw_fl_val), raw_fl_val,
+    default = NA_character_
+  )]
 
-  return(dt[])
+  dt[, c("raw_fl_sign", "raw_fl_val", "raw_regle_val") := NULL]
+
+  return(dt)
 }
