@@ -2,8 +2,6 @@
 output: github_document
 ---
 
-<!-- README.md is generated from README.Rmd. Please edit that file -->
-
 ```{r, include = FALSE}
 knitr::opts_chunk$set(
   collapse = TRUE,
@@ -18,7 +16,12 @@ knitr::opts_chunk$set(
 <!-- badges: start -->
 <!-- badges: end -->
 
-The **rddr** package provides parsers for the proprietary text formats used in aviation tools like **SAAM**, **Gasel**, and **Airspace Editor**.
+## ⚠️ Disclaimer & Project Status
+rddr is an independent, open-source initiative born from the necessity to streamline aviation data analysis. It is not an official product, nor is it affiliated with, endorsed by, or maintained by EUROCONTROL.
+
+While this package is designed for robust performance and has been tested extensively, it is provided "as is" without warranty of any kind. Users are advised to validate results within their own operational contexts. The maintainers assume no liability for the use, interpretation, or consequences of data processed by this tool.
+
+The **rddr** package provides parsers for the proprietary text formats used in aviation tools like **SAAM** and **Gasel**.
 
 Aviation data often comes in complex, non-standard text formats that mix hierarchical structures, geometric definitions, and pseudo-code logic. **rddr** reads these files and converts them into standard `data.table` objects for analysis.
 
@@ -33,7 +36,7 @@ devtools::install_github("alazarovski/rddr")
 
 ## Quick Start & Data Reference
 
-```{r setup}
+```{r setup, warning=FALSE, messages = F}
 library(rddr)
 library(data.table)
 
@@ -49,7 +52,7 @@ data_path <- "inst/extdata"
 #### Airports (`.arp`)
 Basic airport definitions. `read_arp()` automatically converts the raw "minutes" format into standard Decimal Degrees.
 
-```{r arp}
+```{r arp, warning=FALSE, messages = F}
 airports <- read_arp(file.path(data_path, "network.arp"))
 head(airports, 2)
 ```
@@ -61,7 +64,7 @@ head(airports, 2)
 #### Extended Airport Metadata (`.narp`)
 Contains sequencing parameters used for capacity modeling.
 
-```{r narp}
+```{r narp, warning=FALSE, messages = F}
 narp <- read_narp(file.path(data_path, "network.narp"))
 head(narp[, .(icao, taxitime, tis, trs)], 2)
 ```
@@ -86,7 +89,7 @@ head(points, 2)
 #### Runway Configurations (`.runway`)
 Defines which runways (QFU) are active during specific time windows.
 
-```{r runway}
+```{r runway, warning=FALSE, messages = F}
 runways <- read_runway(file.path(data_path, "airport.runway"))
 head(runways, 2)
 ```
@@ -102,7 +105,7 @@ head(runways, 2)
 #### 2D Geometry (`.are`)
 Defines the polygon shapes of "Airblocks" (Volumes). Returns a long-format table where each row is a vertex.
 
-```{r geometry}
+```{r geometry, warning=FALSE, messages = F}
 geometry <- read_are(file.path(data_path, "sectors.are"))
 head(geometry, 3)
 ```
@@ -114,7 +117,7 @@ head(geometry, 3)
 #### Sector Composition (`.sls`)
 Links the 2D Volumes (`.are`) to vertical limits to create 3D Elementary Sectors.
 
-```{r sectors}
+```{r sectors, warning=FALSE, messages = F}
 sectors <- read_sls(file.path(data_path, "sectors.sls"))
 head(sectors, 2)
 ```
@@ -127,7 +130,7 @@ head(sectors, 2)
 #### Airspace Hierarchy (`.spc`)
 Defines parent-child relationships (e.g., ACC -> Sector -> Elementary Sector).
 
-```{r spc}
+```{r spc, warning=FALSE, messages = F}
 hierarchy <- read_spc(file.path(data_path, "airspace.spc"))
 head(hierarchy, 2)
 ```
@@ -144,7 +147,7 @@ head(hierarchy, 2)
 #### Configurations (`.cfg`)
 Maps a "Configuration ID" to the list of Elementary Sectors that are open and controlled together.
 
-```{r config}
+```{r config, warning=FALSE, messages = F}
 configs <- read_cfg(file.path(data_path, "sectors.cfg"))
 head(configs, 2)
 ```
@@ -156,7 +159,7 @@ head(configs, 2)
 #### Opening Scheme (`.cos`)
 The schedule. Maps a specific Date + Time -> Configuration ID.
 
-```{r cos}
+```{r cos, warning=FALSE, messages = F}
 schedule <- read_cos(file.path(data_path, "opening_scheme.cos"))
 head(schedule, 2)
 ```
@@ -169,7 +172,7 @@ head(schedule, 2)
 #### Military Opening Times (`.mot`)
 Parses airspace activation files. Handles formats V1, V2 (with FL limits), and V3 automatically.
 
-```{r mot}
+```{r mot, warning=FALSE, messages = F}
 mil <- read_mot(file.path(data_path, "military.mot"))
 head(mil, 2)
 ```
@@ -185,7 +188,7 @@ head(mil, 2)
 #### Traffic Volumes (`.ntfv`)
 Defines flow filters. Each Traffic Volume (TV) is a collection of flow elements (IN/EX/AD).
 
-```{r ntfv}
+```{r ntfv, warning=FALSE, messages = F}
 tvs <- read_ntfv(file.path(data_path, "traffic.ntfv"))
 head(tvs, 2)
 ```
@@ -199,7 +202,7 @@ head(tvs, 2)
 Parses pseudo-code logic rules used to cap flight levels.
 *Use `parse_rules = TRUE` to extract regex patterns.*
 
-```{r flc}
+```{r flc, warning=FALSE, messages = F}
 flc <- read_flc2(file.path(data_path, "constraints.flc2"), parse_rules = TRUE)
 head(flc[, .(rule_id, condition_dep, constraint_type, constraint_value)], 1)
 ```
@@ -212,7 +215,7 @@ head(flc[, .(rule_id, condition_dep, constraint_type, constraint_value)], 1)
 #### Routing Rules (`.awk`)
 Parses RAD (Route Availability Document) logic.
 
-```{r awk}
+```{r awk, warning=FALSE, messages = F}
 rad <- read_awk(file.path(data_path, "routing.awk"), parse_rules = TRUE)
 head(rad[constraint_type == "ROUTING", .(rule_id, condition_dep, routing_constraint)], 1)
 ```
@@ -227,7 +230,7 @@ head(rad[constraint_type == "ROUTING", .(rule_id, condition_dep, routing_constra
 #### Turn Penalties (`.tax`)
 Defines forbidden or penalized turns based on 3 points.
 
-```{r tax}
+```{r tax, warning=FALSE, messages = F}
 turns <- read_tax(file.path(data_path, "penalties.tax"))
 head(turns, 1)
 ```
@@ -237,7 +240,7 @@ head(turns, 1)
 #### Segment Costs (`.pnl`)
 Defines extra costs (in Nautical Miles) for specific segments.
 
-```{r pnl}
+```{r pnl, warning=FALSE, messages = F}
 costs <- read_pnl(file.path(data_path, "costs.pnl"))
 head(costs, 1)
 ```

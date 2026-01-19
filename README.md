@@ -1,15 +1,24 @@
 
-<!-- README.md is generated from README.Rmd. Please edit that file -->
-
 # rddr <img src="man/figures/logo.png" align="right" height="139" />
 
 <!-- badges: start -->
 
 <!-- badges: end -->
 
+## ⚠️ Disclaimer & Project Status
+
+rddr is an independent, open-source initiative born from the necessity
+to streamline aviation data analysis. It is not an official product, nor
+is it affiliated with, endorsed by, or maintained by EUROCONTROL.
+
+While this package is designed for robust performance and has been
+tested extensively, it is provided “as is” without warranty of any kind.
+Users are advised to validate results within their own operational
+contexts. The maintainers assume no liability for the use,
+interpretation, or consequences of data processed by this tool.
+
 The **rddr** package provides parsers for the proprietary text formats
-used in aviation tools like **SAAM**, **Gasel**, and **Airspace
-Editor**.
+used in aviation tools like **SAAM** and **Gasel**.
 
 Aviation data often comes in complex, non-standard text formats that mix
 hierarchical structures, geometric definitions, and pseudo-code logic.
@@ -31,7 +40,6 @@ devtools::install_github("alazarovski/rddr")
 ``` r
 library(rddr)
 library(data.table)
-#> Warning: package 'data.table' was built under R version 4.5.1
 
 # Path to the sample data included in the package
 # IMPORTANT: Ensure you have run the data generation script locally
@@ -49,14 +57,6 @@ Basic airport definitions. `read_arp()` automatically converts the raw
 
 ``` r
 airports <- read_arp(file.path(data_path, "network.arp"))
-#> Warning in data.table::fread(arp_file, sep = "auto", header = FALSE, col.names
-#> = c("icao", : Column name 'icao' (colClasses[[1]][1]) not found
-#> Warning in data.table::fread(arp_file, sep = "auto", header = FALSE, col.names
-#> = c("icao", : Column name 'fir_id' (colClasses[[1]][2]) not found
-#> Warning in data.table::fread(arp_file, sep = "auto", header = FALSE, col.names
-#> = c("icao", : Column name 'lat_min' (colClasses[[2]][1]) not found
-#> Warning in data.table::fread(arp_file, sep = "auto", header = FALSE, col.names
-#> = c("icao", : Column name 'lon_min' (colClasses[[2]][2]) not found
 head(airports, 2)
 #>      icao   lat    lon   fir_id
 #>    <char> <num>  <num>   <char>
@@ -118,26 +118,6 @@ Defines which runways (QFU) are active during specific time windows.
 
 ``` r
 runways <- read_runway(file.path(data_path, "airport.runway"))
-#> Warning in data.table::fread(runway_file, sep = ";", skip = 1, header = FALSE,
-#> : Column name 'date' (colClasses[[1]][1]) not found
-#> Warning in data.table::fread(runway_file, sep = ";", skip = 1, header = FALSE,
-#> : Column name 'icao' (colClasses[[1]][2]) not found
-#> Warning in data.table::fread(runway_file, sep = ";", skip = 1, header = FALSE,
-#> : Column name 'qfu' (colClasses[[1]][3]) not found
-#> Warning in data.table::fread(runway_file, sep = ";", skip = 1, header = FALSE,
-#> : Column name 'start_time' (colClasses[[1]][4]) not found
-#> Warning in data.table::fread(runway_file, sep = ";", skip = 1, header = FALSE,
-#> : Column name 'end_time' (colClasses[[1]][5]) not found
-#> Warning in data.table::fread(runway_file, sep = ";", skip = 1, header = FALSE,
-#> : Column name 'is_default' (colClasses[[1]][6]) not found
-#> Warning in data.table::fread(runway_file, sep = ";", skip = 1, header = FALSE,
-#> : Column name 'origin' (colClasses[[1]][7]) not found
-#> Warning in data.table::fread(runway_file, sep = ";", skip = 1, header = FALSE,
-#> : Column name 'taxi_time' (colClasses[[2]][1]) not found
-#> Warning in data.table::fread(runway_file, sep = ";", skip = 1, header = FALSE,
-#> : Column name 'tis' (colClasses[[2]][2]) not found
-#> Warning in data.table::fread(runway_file, sep = ";", skip = 1, header = FALSE,
-#> : Column name 'trs' (colClasses[[2]][3]) not found
 head(runways, 2)
 #>          date   icao    qfu start_time end_time is_default taxi_time   tis
 #>        <Date> <char> <char>      <int>    <int>     <lgcl>     <int> <int>
