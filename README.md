@@ -38,11 +38,6 @@ analysis.
 | `.rlex`   | `read_rlex`   | Route length extension exceptions        |
 | `.mot`    | `read_mot`    | Military/Airspace opening times          |
 
-> **Note:** Example chunks that read external files use `eval = FALSE`
-> so that the vignette builds even if those files are not available in
-> your environment. Remove that option when running locally with the
-> corresponding inputs.
-
 # 1. Building the Network Environment
 
 Before analyzing specific trajectories or rules, we must first load the
