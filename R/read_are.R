@@ -100,8 +100,8 @@ read_are <- function(are_file) {
   # Convert Minutes to Decimal Degrees
   # Using as.numeric to ensure safety against accidental char reads
   ab[, `:=`(
-    lat = round(as.numeric(lat_min) / 60, 4),
-    lon = round(as.numeric(lon_min) / 60, 4)
+    lat = as.numeric(lat_min) / 60,
+    lon = as.numeric(lon_min) / 60
   )]
 
   # --- 5. Clean & Order ---
@@ -111,7 +111,7 @@ read_are <- function(are_file) {
   ab_clean <- ab[(is_header == FALSE) & !is.na(lat) & !is.na(lon)]
 
   # Keep original sequence order (Critical for Polygon creation)
-  ab_clean[, sequence := .I]
+  ab_clean[, sequence := seq_len(.N), by = volume_id]
 
   # Select final columns
   result <- ab_clean[, .(volume_id, lat, lon, sequence)]
