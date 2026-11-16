@@ -1,7 +1,7 @@
 TARGET = x86_64-pc-windows-gnu
 TARGET_DIR = rust/target
 STATLIB = $(TARGET_DIR)/$(TARGET)/release/libairspaceprofile.a
-PKG_LIBS = "$(STATLIB)" -lws2_32 -ladvapi32 -luserenv -lbcrypt -lntdll
+PKG_LIBS = "$(STATLIB)" -lws2_32 -ladvapi32 -luserenv -lbcrypt -lntdll -lsynchronization
 
 all: $(SHLIB)
 
