@@ -1,0 +1,137 @@
+---
+title: "Airspace Entry and Exit Profiles"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Airspace Entry and Exit Profiles}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+This tutorial creates a small airspace and a flight that passes through it
+twice. It then prepares the airspace, reads the flight and computes its
+entry and exit profiles. All calculations run inside `rddr`.
+
+```{r setup}
+library(rddr)
+folder <- tempfile("rddr-example-")
+dir.create(folder)
+cat("Sample files:", folder, "\n")
+```
+
+The files are created in a temporary directory, which may be removed when R
+exits. To keep them, replace `folder` with a directory of your choice. Use a
+new or empty directory to avoid overwriting existing files.
+
+## 1. Create airspace files
+
+The `.are` file defines a square between 0 and 2 degrees longitude and
+latitude. Its coordinates are **latitude, longitude in minutes**:
+120 minutes equals 2 degrees.
+
+```{r are}
+writeLines(c(
+  "4 0 0 0 0 0 0 0 0 0 0 0 0 0 BLOCK1",
+  "0 0", "0 120", "120 120", "120 0"
+), file.path(folder, "example.are"))
+```
+
+The `.sls` file assigns the square to `SECTOR1` from flight level 100 to
+flight level 200, corresponding to 10,000--20,000 feet.
+
+```{r sls}
+writeLines("SECTOR1 + BLOCK1 100 200", file.path(folder, "example.sls"))
+```
+
+The `.spc` file defines an AUAG group containing an AUA, which contains that
+elementary sector.
+
+```{r spc}
+writeLines(c(
+  "4",
+  "A;DEMO_GROUP;Demo group;AUAG;1",
+  "S;DEMO_UNIT;AUA",
+  "A;DEMO_UNIT;Demo unit;AUA;1",
+  "S;SECTOR1;ES"
+), file.path(folder, "example.spc"))
+```
+
+Prepare these matching files once. The result includes a spatial index and can
+be reused for multiple trajectory datasets in the same R session.
+
+```{r prepare}
+airspaces <- init_airspaces(
+  file.path(folder, "example.are"),
+  file.path(folder, "example.sls"),
+  file.path(folder, "example.spc"),
+  airspace_type = "AUAG",
+  progress = TRUE
+)
+```
+
+Airspace objects contain session-bound native pointers. Recreate them after
+restarting R or in a different R process; do not save them to RDS.
+
+## 2. Create and read a trajectory
+
+This flight travels east through the square, then returns west through it.
+Longitude and latitude are in decimal degrees, altitude is in feet and
+timestamps are in UTC.
+
+```{r create-flight}
+trajectory <- data.frame(
+  id = c("FLIGHT1", "FLIGHT1", "FLIGHT1"),
+  lon = c(-1, 3, -1),
+  lat = c(1, 1, 1),
+  altitude = c(15000, 15000, 15000),
+  time_over = c("2025-01-01T00:00:00Z", "2025-01-01T00:00:40Z",
+                "2025-01-01T00:01:20Z")
+)
+write.csv(trajectory, file.path(folder, "flights.csv"), row.names = FALSE)
+
+flights <- read_trajectories(file.path(folder, "flights.csv"), progress = TRUE)
+flights
+```
+
+`read_trajectories()` reads CSV files. Each flight needs at least two valid
+observations with distinct timestamps. For Parquet, use a separate reader such
+as Arrow and pass the resulting data frame directly to `intersect_trajectories()`.
+It must have character `id`, numeric `lon`, `lat` and `altitude`, and
+`time_over` as POSIXct, Unix seconds or ISO 8601 strings.
+
+## 3. Calculate visits
+
+```{r intersect}
+profiles <- intersect_trajectories(airspaces, flights, progress = TRUE)
+profiles
+```
+
+There are two rows for `FLIGHT1` in `DEMO_GROUP`. The first visit is from
+00:00:10 to 00:00:30 UTC, and the second from 00:00:50 to 00:01:10 UTC.
+`visit_id` distinguishes continuous visits to the same airspace. Entry and exit
+coordinates, altitudes and times are interpolated between observations.
+`starts_inside` and `ends_inside` indicate that the recording starts or ends
+inside the airspace rather than observing a boundary crossing.
+
+You can also pass the original data frame directly:
+
+```{r direct}
+direct_profiles <- intersect_trajectories(airspaces, trajectory)
+identical(profiles, direct_profiles)
+```
+
+Set `progress = TRUE` for messages; it is off by default. The intersection
+percentage measures processed trajectory segments, not the entire operation.
+
+## Geometry limitations
+
+The engine uses planar longitude/latitude segments with linear interpolation,
+not great-circle paths. It follows the shorter longitude route across the
+antimeridian; an exact 180-degree difference is rejected as ambiguous.
+Positive-duration travel along a boundary is included, but isolated touches
+are excluded. Holes, curved segments, and polar or globe-winding polygons are
+not supported. These calculations are not intended for safety-critical
+navigation. See `?intersect_trajectories` for more details.

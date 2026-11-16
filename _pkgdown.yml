@@ -9,7 +9,7 @@ navbar:
   components:
     intro:
       text: "Get Started"
-      href: articles/rddr-guide.html  # This links directly to your guide
+      href: articles/rddr-workflow.html
     reference:
       text: "Reference"
       href: reference/index.html
@@ -17,7 +17,9 @@ navbar:
       text: "Articles"
       menu:
         - text: "Complete Guide"
-          href: articles/rddr-guide.html
+          href: articles/rddr-workflow.html
+        - text: "Airspace entry and exit profiles"
+          href: articles/airspace-profiles.html
 
 reference:
   - title: "Network Infrastructure"
@@ -36,6 +38,9 @@ reference:
       - read_sls
       - read_spc
       - read_aco
+      - init_airspaces
+      - read_trajectories
+      - intersect_trajectories
 
   - title: "Operations & Configs"
     desc: "Configurations and opening schemes"

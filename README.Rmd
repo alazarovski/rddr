@@ -34,6 +34,54 @@ You can install the development version of rddr from [GitHub](https://github.com
 devtools::install_github("alazarovski/rddr")
 ```
 
+Source installation also requires R >= 4.2, Rust/Cargo >= 1.85, GNU make and
+the platform's R compilation tools. On Windows, use matching Rtools and the
+`x86_64-pc-windows-gnu` Rust toolchain; on macOS, use Xcode Command Line Tools
+and a Rust toolchain matching the R architecture. Linux needs R development
+headers and a C compiler. A compatible precompiled package does not need Rust
+on the user's machine.
+
+The [native build workflow](.github/workflows/native-build.yml) builds and tests
+on Linux, Windows, and both Apple Silicon and Intel macOS after it is pushed to
+GitHub. Artifacts are platform-, architecture- and R-version-specific; Linux
+builds may also depend on the distribution and system libraries. The workflow
+does not publish a package repository. The package's existing license field is
+still a placeholder and must be resolved by its maintainer before release.
+
+## Airspace entry and exit profiles
+
+The Rust engine is built **inside rddr**; no separate airspaceprofile R package
+is required. Try it with the included synthetic data:
+
+```r
+library(rddr)
+folder <- system.file("extdata", package = "rddr")
+airspaces <- init_airspaces(
+  file.path(folder, "example.are"), file.path(folder, "example.sls"),
+  file.path(folder, "example.spc"), airspace_type = "AUAG", progress = TRUE
+)
+flights <- read_trajectories(file.path(folder, "flights.csv"), progress = TRUE)
+profiles <- intersect_trajectories(airspaces, flights, progress = TRUE)
+print(profiles)
+```
+
+For a step-by-step example that creates the airspace and flight files, see the
+[airspace profiles tutorial](vignettes/airspace-profiles.Rmd), or open the
+installed HTML tutorial with `vignette("airspace-profiles", package = "rddr")`.
+
+`read_trajectories()` reads CSV. Alternatively, pass a data frame with character
+`id`, numeric `lon`, `lat`, `altitude` in feet and `time_over` (POSIXct, Unix
+seconds or ISO 8601 strings). Parquet can be read separately into such a data
+frame. Each row of the result is a continuous visit, with interpolated entry and
+exit positions, altitudes and times; re-entries are separate visits.
+
+Progress is optional. Its percentage measures processed segments, not the
+entire operation. Airspace objects are session-bound external pointers and
+must be recreated after restarting R. Intersections use planar longitude and
+latitude interpolation, not great-circle paths; see `?intersect_trajectories`
+for boundary and geometry limitations. These calculations are not intended for
+safety-critical navigation.
+
 ## Quick Start & Data Reference
 
 ```{r setup, warning=FALSE, messages = F}

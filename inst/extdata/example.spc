@@ -1,0 +1,14 @@
+12
+A;LEFT;Left square;NAS;1
+S;S1;FIR
+A;UNIT;Four blocks;AUA;4
+S;S1;ES
+S;S2;ES
+S;S3;ES
+S;S4;ES
+A;GROUP;Example group;AUAG;1
+S;UNIT;AUA
+A;REGION;Example region;REG;1
+S;GROUP;AUAG
+A;AREA1;Example area;AREA;1
+S;LEFT;NAS

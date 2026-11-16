@@ -3,3 +3,9 @@
 ^doc$
 ^Meta$
 ^README\.Rmd$
+^\.github$
+^tools$
+^dist$
+^src/rust/target$
+^.*\.Rcheck$
+^.*\.(tar\.gz|zip|tgz)$

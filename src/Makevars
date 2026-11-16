@@ -1,0 +1,20 @@
+RUST_DIR = rust
+TARGET_DIR = rust/target
+STATLIB = $(TARGET_DIR)/release/libairspaceprofile.a
+
+ifeq ($(shell uname -s),Darwin)
+PKG_LIBS = "$(STATLIB)" -liconv -lSystem -lm
+else
+PKG_LIBS = "$(STATLIB)" -ldl -lpthread -lm -lrt -lutil
+endif
+
+all: $(SHLIB)
+
+$(SHLIB): $(STATLIB)
+
+.PHONY: $(STATLIB)
+$(STATLIB):
+	cargo build --locked --release --features r-api --manifest-path="$(RUST_DIR)/Cargo.toml" --target-dir="$(TARGET_DIR)"
+
+clean:
+	rm -f $(OBJECTS) $(SHLIB)

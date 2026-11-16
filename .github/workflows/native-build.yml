@@ -1,0 +1,66 @@
+name: Native R package builds
+
+on:
+  workflow_dispatch:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Select Windows GNU toolchain
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          rustup toolchain install stable-x86_64-pc-windows-gnu --profile minimal --component clippy
+          rustup default stable-x86_64-pc-windows-gnu
+          echo "RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-gnu" >> "$GITHUB_ENV"
+      - uses: r-lib/actions/setup-r-dependencies@v2
+      - name: Rust tests and lint
+        shell: bash
+        run: |
+          cargo test --locked --manifest-path src/rust/Cargo.toml
+          cargo clippy --locked --features r-api --manifest-path src/rust/Cargo.toml --lib -- -D warnings
+      - name: Build and check source
+        shell: bash
+        run: |
+          set -e
+          version=$(Rscript -e 'cat(read.dcf("DESCRIPTION")[1, "Version"])')
+          mkdir -p dist/source dist/binary dist/check
+          R CMD build .
+          mv "rddr_${version}.tar.gz" dist/source/
+          R CMD check --no-manual --output=dist/check "dist/source/rddr_${version}.tar.gz"
+      - name: Build native package and run integration tests
+        shell: bash
+        run: |
+          set -e
+          version=$(Rscript -e 'cat(read.dcf("DESCRIPTION")[1, "Version"])')
+          cd dist/binary
+          R CMD INSTALL --build "../source/rddr_${version}.tar.gz"
+          cd ../..
+          Rscript tests/airspace_profiles.R
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rddr-${{ matrix.os }}-${{ runner.arch }}
+          path: |
+            dist/source/*
+            dist/binary/*
+            dist/check/rddr.Rcheck/00check.log
+            dist/check/rddr.Rcheck/00install.out
