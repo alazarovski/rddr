@@ -67,7 +67,7 @@ print(profiles)
 ```
 
 For a step-by-step example that creates the airspace and flight files, see the
-[airspace profiles tutorial](vignettes/airspace-profiles.Rmd), or open the
+[airspace profiles tutorial](https://alazarovski.github.io/rddr/articles/airspace-profiles.html), or open the
 installed HTML tutorial with `vignette("airspace-profiles", package = "rddr")`.
 
 `read_trajectories()` reads CSV. Alternatively, pass a data frame with character

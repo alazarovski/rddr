@@ -19,5 +19,5 @@ Imports:
     zoo
 VignetteBuilder: knitr
 Suggests: knitr, rmarkdown, testthat
-URL: https://github.com/alazarovski/rddr
+URL: https://alazarovski.github.io/rddr/, https://github.com/alazarovski/rddr
 BugReports: https://github.com/alazarovski/rddr/issues
